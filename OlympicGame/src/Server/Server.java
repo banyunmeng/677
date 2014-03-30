@@ -1,9 +1,11 @@
 package Server;
 
 
+import java.lang.management.ManagementFactory;
 import java.net.MalformedURLException;
 import java.rmi.AlreadyBoundException;
 import java.rmi.Naming;
+import java.rmi.NotBoundException;
 import java.rmi.RMISecurityManager;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
@@ -17,29 +19,129 @@ import Utilities.Team;
 
 public class Server extends UnicastRemoteObject implements IConnection{
 	/**
-	 * This is Server class, it implements all the methods in IConnection interface
-	 * and these methods are executed synchronously
-	 * Server has a HashMap<String, Team> tally structure to store the tallies and scores
-	 * of teams in ongoing events
+	 * This is Server class, receives the request from clients and communicate with database
+	 * id is the id of the server
+	 * count is used to collect request frequency for this server
+	 * timeOffset is the difference between the average time of the three server processes and system time
+	 * leader is used to record which server is the leader after election 
 	 */
-
-	HashMap<String, Team> tally = new HashMap<String, Team>();
+	int id;
+	int count;
+	long timeOffset;
+	IConnection db;
+	static IConnection server2;
+	public int leader;
 	
-	public Server() throws RemoteException {
+	public class Clock implements Runnable{
+		@Override
+		public void run() {
+			System.out.println("start clock");
+			while(true){
+				try {
+					long tmp = System.nanoTime();
+					long tmp1 = db.clock();
+					long tmp2 = server2.clock();
+					
+					//average time of the three machines
+					long avg = (tmp+tmp1+tmp2)/3;
+					System.out.println("avg "+ avg);
+					
+					//set time offset
+					server2.setTimeoff(avg - tmp2);
+					db.setTimeoff(avg - tmp1);
+					setTimeoff(avg - tmp);
+					
+					//print out request frequency every 5 seconds
+					System.out.println("request frequency "+count/5);
+					count = 0;
+					Thread.sleep(5000);
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (RemoteException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			
+		}
+	
+	}
+	
+	public Server(int id, String dbAddress) throws RemoteException, MalformedURLException, NotBoundException {
 		super();
-		// TODO Auto-generated constructor stub
+		this.id = id;
+		db = (IConnection) Naming.lookup(dbAddress);
+		System.out.println("Cnnected to db");
+		
 	}
 
+	//increment the metal records for a specific team
+	public synchronized void incrementMetalTally(String teamName, String metalType) throws RemoteException{
+		db.incrementMetalTally(teamName, metalType);
+		count++;
+	}
+
+	//get Metal tally for a specific team
+	public synchronized String getMedalTally(String teamName) throws RemoteException {
+		count++;
+		return db.getMedalTally(teamName);
+		
+	}
+	
+	//get score of a specific event
+	public synchronized String getScore(String eventType) throws RemoteException {
+		count++;
+		return db.getScore(eventType);
+		
+	}
+	
+	//set scores for a team in a specific event
+	public synchronized void setScore(String teamName, String eventType, int score) throws RemoteException{
+		db.setScore(teamName, eventType, score);
+		count++;
+	}
+	
+	public int getId() throws RemoteException{
+		return id;
+	}
+
+
+	@Override
+	public long clock() throws RemoteException {
+		return System.nanoTime();
+	}
+	
+	@Override
+	public void setleader(int id) throws RemoteException {
+		leader = id;
+	}
+	
+	/**
+	 * 
+	 * @param args
+	 * args[0] the id of this server
+	 * args[1] the ip address of another server 
+	 * args[2] the ip address of database
+	 */
 	public static void main(String[] args){
-		Server con;
+		if(args.length != 3){
+			System.out.println("args: id of this server, ip address of another server, ip address of database");
+			return;
+		}
+		Server server = null;
 		try {
-			con = new Server();
+			server = new Server(Integer.parseInt(args[0]), "rmi://"+args[2]+":10001/db");
 			//register server to port 10001
 			LocateRegistry.createRegistry(10001);
 			//bind server object to a rmi address
-			Naming.bind("rmi://localhost:10001/Olympic", con);		
-			System.out.println("start server");
-			} catch (RemoteException e) {
+			Naming.bind("rmi://localhost:10001/server", server);		
+			System.out.println("start server " + server.id);
+			Thread.sleep(5000);
+			server2 = (IConnection) Naming.lookup("rmi://"+args[1]+":10001/server");
+			server.leaderElection();
+			
+		} catch (RemoteException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (MalformedURLException e) {
@@ -48,59 +150,37 @@ public class Server extends UnicastRemoteObject implements IConnection{
 		} catch (AlreadyBoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NotBoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
-		
 	}
 
-	//increment the metal records for a specific team
-	public synchronized void incrementMetalTally(String teamName, String metalType){
-		Team t = tally.get(teamName);
-		//if this team is not exist currently, build a new record
-		if(t == null){
-			t = new Team(teamName);
+	public void leaderElection() throws RemoteException {
+		System.out.println("start leader election");
+		if (this.id > server2.getId()){
+			leader = this.id;
+			System.out.println("leader is "+ leader);
+			server2.setleader(leader); 
+			db.setleader(leader);
 		}
-		t.incrementMetalTally(metalType);
-		tally.put(teamName, t);
-		System.out.println("increment Metal for " + teamName + " a metal of " + metalType);
 		
-		//print tally for all teams
-		String s = "";
-		System.out.println("--------------------------------------");
-		for(Team t1: tally.values()){
-			System.out.println(t1.teamName + " gold " + t1.gold + " silver " + t1.silver + " bronze " + t1.bronze);
+		if(this.id == leader){
+			Clock clockthread = new Clock();
+			Thread t = new Thread(clockthread);
+			t.start();
 		}
-		System.out.println("--------------------------------------");
 	}
 
-	//get Metal tally for a specific team
-	public synchronized String getMedalTally(String teamName) throws RemoteException {
-		// TODO Auto-generated method stub
-		Team t = tally.get(teamName);
-		if(t == null){
-			return "No such team";
-		}
-		return "Team " + teamName + ": gold " + t.gold + " silver " + t.silver + " bronze " + t.bronze; 
+	@Override
+	public void setTimeoff(long timeoff) throws RemoteException {
+		this.timeOffset = timeoff;
+		System.out.println(id +" timeoff is "+timeoff);
 	}
-	
-	//get score of a specific event
-	public synchronized String getScore(String eventType) throws RemoteException {
-		// TODO Auto-generated method stub
-		String s = eventType + " scores: ";
-		for(Team t:tally.values()){
-			s += t.teamName+ ":"+ t.getScore(eventType) + " ";
-		}
-		return s;
-	}
-	
-	//set scores for a team in a specific event
-	public synchronized void setScore(String teamName, String eventType, int score){
-		Team t = tally.get(teamName);
-		if(t == null){
-			t = new Team(teamName);
-		}
-		t.setScore(eventType, score);
-		tally.put(teamName, t);
-		System.out.println("setScore " + teamName + " " + eventType + " " + score);
-	}
-	
 }

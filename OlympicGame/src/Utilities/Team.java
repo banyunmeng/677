@@ -9,6 +9,7 @@ public class Team {
 	public int gold = 0;
 	public int silver = 0;
 	public int bronze = 0;
+	public long timestamp = 0;
 	
 	public HashMap<String,Integer> scores = new HashMap<String,Integer>();
 	

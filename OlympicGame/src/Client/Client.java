@@ -41,13 +41,16 @@ public class Client {
 			
 		}
 	}
-	public Client(String team, int id, int rate, String address){
+	public Client(String team, int id, int rate, String address1, String address2){
 		this.id = id;
 		this.teamName = team;
+		//randomly choose one from the two servers
+		int tmp = (int)Math.random()*2+1;
+		String address = tmp == 0?address1:address2;
 		
 		try {
 			connection = (IConnection) Naming.lookup(address);
-			System.out.println("Client " +id + " connected to server......");
+			System.out.println("Client " +id + " connected to serve "+address);
 			client clientThread = new client(rate);
 			Thread t = new Thread(clientThread);
 			
@@ -71,7 +74,7 @@ public class Client {
 	
 	public void getMetalTally(String teamName){
 		try {
-			System.out.println("Client "+ id + ": " + connection.getMedalTally(teamName));
+			System.out.println("Client "+ id + ": \n" + connection.getMedalTally(teamName));
 		} catch (RemoteException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -80,7 +83,7 @@ public class Client {
 	
 	public void getScore(String eventType){
 		try {
-			System.out.println("Client "+ id + ": " + connection.getScore(eventType));
+			System.out.println("Client "+ id + ": \n" + connection.getScore(eventType));
 		} catch (RemoteException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -88,16 +91,13 @@ public class Client {
 	}
 	
 	public static void main(String[] args){
-		if(args.length < 2){
-			System.out.println("args: number of clients, pulling rate(ms), server address");
+		if(args.length != 4){
+			System.out.println("args: number of clients, pulling rate(ms), server1 address, server2 address");
 			return;
-		} if (args.length == 2){
+		} 
+		if (args.length == 4){
 			for(int i = 0; i < Integer.parseInt(args[0]); i++){
-				new Client(Names.teamNames[i%6], i, Integer.parseInt(args[1]), "rmi://localhost:10001/Olympic");
-			}
-		} if (args.length == 3){
-			for(int i = 0; i < Integer.parseInt(args[0]); i++){
-				new Client(Names.teamNames[i%6], i, Integer.parseInt(args[1]), "rmi://"+args[2]+":10001/Olympic");
+				new Client(Names.teamNames[i%6], i, Integer.parseInt(args[1]), "rmi://"+args[2]+":10001/server", "rmi://"+args[3]+":10001/server");
 			}
 		} 
 		

@@ -12,8 +12,10 @@ import Utilities.Team;
 public class Cacofonix {
 	static IConnection connection;
 	
-	public Cacofonix(String address){
+	public Cacofonix(String address1, String address2){
 		try {
+			int tmp = (int)Math.random()*2+1;
+			String address = tmp == 0?address1:address2;
 			connection = (IConnection) Naming.lookup(address);
 		} catch (MalformedURLException e) {
 			// TODO Auto-generated catch block
@@ -40,6 +42,7 @@ public class Cacofonix {
 			while(true){
 				
 				try {
+					System.out.println("updating scores");
 					connection.setScore(Names.teamNames[i%6],Names.events[i%6], i);
 					Thread.sleep(updateRate);
 				} catch (RemoteException e) {
@@ -66,6 +69,7 @@ public class Cacofonix {
 			int j = 0;
 			while(true){
 				try {
+					System.out.println("updating tallies");
 					connection.incrementMetalTally(Names.teamNames[j%6], Names.metals[j%3]);
 					Thread.sleep(rate);
 				} catch (RemoteException e) {
@@ -82,13 +86,11 @@ public class Cacofonix {
 		
 	}
 	public static void main(String[] args){
-		if(args.length < 2) {
-			System.out.print("args: update rate for score, update rate for tally(ms), (option) server address");
+		if(args.length < 4) {
+			System.out.println("args: update rate for score, update rate for tally(ms), server1 ip address, server2 ip address");
 			return;
-		} if(args.length == 2){
-			Cacofonix c = new Cacofonix("rmi://localhost:10001/Olympic");
-		} if(args.length == 3){
-			Cacofonix c = new Cacofonix("rmi://"+args[2]+":10001/Olympic");
+		} if(args.length == 4){
+			Cacofonix c = new Cacofonix("rmi://"+args[2]+":10001/server", "rmi://"+args[3]+":10001/server");
 		}
 			
 		setScore ss = new setScore(Integer.parseInt(args[0]));
